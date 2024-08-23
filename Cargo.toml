@@ -1,0 +1,9 @@
+[package]
+name = "radio-history"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hound = "3.5.1"
+num-complex = "0.4.6"
+rtlsdr = "0.1.4"
