@@ -48,3 +48,14 @@ where
         self.scan(filter, |filter, value| Some(filter.filter(value)))
     }
 }
+
+impl<Iter> LowPassExt<f32> for Iter
+where
+    Iter: Iterator<Item = f32>,
+{
+    fn low_pass(mut self, sample_rate: u32, cutoff_freq: f32) -> impl Iterator<Item = f32> {
+        let mut filter = LowPassFilter::new(sample_rate, cutoff_freq);
+        filter.prime(Complex::new(self.next().unwrap(), 0.0));
+        self.map(move |value| filter.filter(Complex::new(value, 0.0)).re)
+    }
+}
