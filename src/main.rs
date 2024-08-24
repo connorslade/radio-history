@@ -1,4 +1,4 @@
-use std::{fs::File, io::BufWriter};
+use std::{fs::File, io::BufWriter, time::Instant};
 
 use chrono::Local;
 use hound::{SampleFormat, WavSpec, WavWriter};
@@ -9,6 +9,7 @@ use num_complex::{Complex, ComplexFloat};
 mod filters;
 mod transcribe;
 use filters::{down_sample::DownSampleExt, low_pass::LowPassExt};
+use transcribe::{Transcriber, TRANSCRIBE_SAMPLE_RATE};
 
 const BUFFER_SIZE: usize = 16_384;
 const SAMPLE_RATE: u32 = 250_000;
@@ -24,14 +25,25 @@ const WAVE_SPEC: WavSpec = WavSpec {
     sample_format: SampleFormat::Float,
 };
 
+struct Message {
+    wav: WavWriter<BufWriter<File>>,
+    buffer: Vec<f32>,
+}
+
 fn main() {
     let mut device = rtlsdr::open(0).unwrap();
+
+    println!("Gains: {:?}", device.get_tuner_gains().unwrap());
+
+    device.set_tuner_gain_mode(true).unwrap();
+    device.set_tuner_gain(364).unwrap();
 
     device.set_center_freq(156_450_000).unwrap();
     device.set_sample_rate(SAMPLE_RATE).unwrap();
     device.reset_buffer().unwrap();
 
-    let mut wav: Option<WavWriter<BufWriter<File>>> = None;
+    let mut transcriber = Transcriber::new("tiny_en.bin").unwrap();
+    let mut wav: Option<Message> = None;
 
     loop {
         let data = device.read_sync(BUFFER_SIZE).unwrap();
@@ -41,15 +53,21 @@ fn main() {
             .collect::<Vec<_>>();
 
         if rms(&iq) < SQUELCH {
-            if let Some(wav) = wav.take() {
+            if let Some(Message { wav, buffer }) = wav.take() {
                 wav.finalize().unwrap();
+                let start = Instant::now();
+                let text = transcriber.transcribe(&buffer).unwrap();
+                println!("{text} ({:?})", start.elapsed());
             }
             continue;
         }
 
-        let wav = wav.get_or_insert_with(|| {
+        let message = wav.get_or_insert_with(|| {
             let filename = Local::now().format("rec/%Y-%m-%d_%H-%M-%S.wav").to_string();
-            WavWriter::create(filename, WAVE_SPEC).unwrap()
+            Message {
+                wav: WavWriter::create(filename, WAVE_SPEC).unwrap(),
+                buffer: Vec::new(),
+            }
         });
 
         let pcm = iq
@@ -62,13 +80,21 @@ fn main() {
                 angle * 2.0
             });
 
-        for sample in pcm
+        let audio = pcm
             .low_pass(SAMPLE_RATE, AUDIO_CUTOFF_FREQ)
             .filter(|x| x.abs() < 1.0)
             .down_sample(SAMPLE_RATE, WAVE_SAMPLE_RATE)
-        {
-            wav.write_sample(sample).unwrap();
-        }
+            .collect::<Vec<_>>();
+
+        audio
+            .iter()
+            .for_each(|x| message.wav.write_sample(*x).unwrap());
+
+        message.buffer.extend(
+            audio
+                .into_iter()
+                .down_sample(WAVE_SAMPLE_RATE, TRANSCRIBE_SAMPLE_RATE),
+        );
     }
 }
 

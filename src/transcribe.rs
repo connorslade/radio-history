@@ -1,6 +1,8 @@
 use anyhow::Result;
 use whisper_rs::{self, FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
+pub const TRANSCRIBE_SAMPLE_RATE: u32 = 16_000;
+
 pub struct Transcriber {
     model: WhisperContext,
 }
@@ -14,9 +16,15 @@ impl Transcriber {
 
     /// Audio must be 16kHz mono
     pub fn transcribe(&mut self, audio: &[f32]) -> Result<String> {
-        let mut state = self.model.create_state()?;
-        let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        params.set_translate(true);
+        params.set_language(Some("en"));
+        params.set_print_special(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
 
+        let mut state = self.model.create_state()?;
         state.full(params, audio)?;
 
         let mut out = String::new();
