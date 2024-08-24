@@ -6,8 +6,9 @@ use hound::{SampleFormat, WavSpec, WavWriter};
 use itertools::Itertools;
 use num_complex::{Complex, ComplexFloat};
 
-mod low_pass;
-use low_pass::LowPassExt;
+mod filters;
+mod transcribe;
+use filters::{down_sample::DownSampleExt, low_pass::LowPassExt};
 
 const BUFFER_SIZE: usize = 16_384;
 const SAMPLE_RATE: u32 = 250_000;
@@ -61,19 +62,11 @@ fn main() {
                 angle * 2.0
             });
 
-        let mut err = 0.0;
-        let step_by = SAMPLE_RATE as f32 / WAVE_SAMPLE_RATE as f32;
-
         for sample in pcm
             .low_pass(SAMPLE_RATE, AUDIO_CUTOFF_FREQ)
             .filter(|x| x.abs() < 1.0)
+            .down_sample(SAMPLE_RATE, WAVE_SAMPLE_RATE)
         {
-            err += 1.0;
-            if err < step_by {
-                continue;
-            }
-
-            err -= step_by;
             wav.write_sample(sample).unwrap();
         }
     }

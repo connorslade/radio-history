@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.86"
 chrono = "0.4.38"
 hound = "3.5.1"
 itertools = "0.13.0"
 num-complex = "0.4.6"
 num-traits = "0.2.19"
 rtlsdr = "0.1.4"
+whisper-rs = "0.11.1"
