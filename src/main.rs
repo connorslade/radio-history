@@ -1,15 +1,20 @@
 use std::{fs::File, io::BufWriter, time::Instant};
 
 use chrono::Local;
+use database::Database;
 use hound::{SampleFormat, WavSpec, WavWriter};
 
+use anyhow::Result;
 use itertools::Itertools;
 use num_complex::{Complex, ComplexFloat};
 
+mod database;
 mod filters;
 mod transcribe;
+mod web;
 use filters::{down_sample::DownSampleExt, low_pass::LowPassExt};
 use transcribe::{Transcriber, TRANSCRIBE_SAMPLE_RATE};
+use uuid::Uuid;
 
 const BUFFER_SIZE: usize = 16_384;
 const SAMPLE_RATE: u32 = 250_000;
@@ -26,16 +31,20 @@ const WAVE_SPEC: WavSpec = WavSpec {
 };
 
 struct Message {
+    uuid: Uuid,
     wav: WavWriter<BufWriter<File>>,
     buffer: Vec<f32>,
 }
 
-fn main() {
+fn main() -> Result<()> {
     let mut device = rtlsdr::open(0).unwrap();
 
     device.set_center_freq(156_450_000).unwrap();
     device.set_sample_rate(SAMPLE_RATE).unwrap();
     device.reset_buffer().unwrap();
+
+    let database = Database::new()?;
+    web::start(database.clone());
 
     let mut transcriber = Transcriber::new("tiny_en.bin").unwrap();
     let mut wav: Option<Message> = None;
@@ -48,21 +57,26 @@ fn main() {
             .collect::<Vec<_>>();
 
         if rms(&iq) < SQUELCH {
-            if let Some(Message { wav, buffer }) = wav.take() {
+            if let Some(Message { uuid, wav, buffer }) = wav.take() {
                 wav.finalize().unwrap();
-                if !buffer.is_empty() {
-                    let start = Instant::now();
-                    let text = transcriber.transcribe(&buffer).unwrap();
-                    println!("{text} ({:?})", start.elapsed());
-                }
+
+                let start = Instant::now();
+                let text = (!buffer.is_empty()).then(|| transcriber.transcribe(&buffer).unwrap());
+                let text = text.as_deref();
+
+                println!("{} ({:?})", text.unwrap_or("<No Text>"), start.elapsed());
+                database.lock().insert_message(text, uuid)?;
             }
             continue;
         }
 
         let message = wav.get_or_insert_with(|| {
-            let filename = Local::now().format("rec/%Y-%m-%d_%H-%M-%S.wav").to_string();
+            let uuid = Uuid::new_v4();
+            let wav = WavWriter::create(format!("data/audio/{uuid}.wav"), WAVE_SPEC).unwrap();
+
             Message {
-                wav: WavWriter::create(filename, WAVE_SPEC).unwrap(),
+                uuid,
+                wav,
                 buffer: Vec::new(),
             }
         });

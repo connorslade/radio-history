@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS messages (
+    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    audio BLOB,
+    text TEXT
+);
