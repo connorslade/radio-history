@@ -1,6 +1,6 @@
+use core::f32;
 use std::{fs::File, io::BufWriter, time::Instant};
 
-use chrono::Local;
 use database::Database;
 use hound::{SampleFormat, WavSpec, WavWriter};
 
@@ -27,7 +27,7 @@ const WAVE_SPEC: WavSpec = WavSpec {
     channels: 1,
     sample_rate: WAVE_SAMPLE_RATE,
     bits_per_sample: 32,
-    sample_format: SampleFormat::Float,
+    sample_format: SampleFormat::Int,
 };
 
 struct Message {
@@ -97,9 +97,12 @@ fn main() -> Result<()> {
             .down_sample(SAMPLE_RATE, WAVE_SAMPLE_RATE)
             .collect::<Vec<_>>();
 
-        audio
-            .iter()
-            .for_each(|x| message.wav.write_sample(*x).unwrap());
+        audio.iter().for_each(|x| {
+            message
+                .wav
+                .write_sample((x * i32::MAX as f32) as i32)
+                .unwrap()
+        });
 
         message.buffer.extend(
             audio

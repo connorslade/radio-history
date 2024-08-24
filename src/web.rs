@@ -1,15 +1,21 @@
 use std::{fs::File, thread};
 
-use afire::{extensions::RouteShorthands, headers::ContentType, Content, Server};
+use afire::{
+    extensions::{RouteShorthands, ServeStatic},
+    headers::ContentType,
+    Content, Middleware, Server,
+};
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::database::Database;
 
 pub fn start(database: Database) {
-    let mut server = Server::<Database>::new("localhost", 8081)
+    let mut server = Server::<Database>::new("0.0.0.0", 8081)
         .workers(4)
         .state(database);
+
+    ServeStatic::new("web").attach(&mut server);
 
     server.get("/messages", |ctx| {
         let messages = ctx.app().lock().get_messages()?;
