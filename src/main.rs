@@ -1,15 +1,20 @@
 use std::io::{stdout, Write};
 
 use hound::{SampleFormat, WavSpec, WavWriter};
+
 use itertools::Itertools;
 use num_complex::Complex;
 
-const BUFFER_SIZE: usize = 16 * 16384;
+mod low_pass;
+use low_pass::LowPassExt;
+
+const BUFFER_SIZE: usize = 16_384;
 const SAMPLE_RATE: u32 = 250_000;
 
 fn main() {
     let mut device = rtlsdr::open(0).unwrap();
 
+    // device.set_center_freq(156_450_000).unwrap();
     device.set_center_freq(99_100_000).unwrap();
     device.set_sample_rate(SAMPLE_RATE).unwrap();
     device.reset_buffer().unwrap();
@@ -37,14 +42,19 @@ fn main() {
         let iq = data.chunks_exact(2).map(|chunk| {
             Complex::new(chunk[0] as f32 / 128.0 - 1.0, chunk[1] as f32 / 128.0 - 1.0)
         });
-        let pcm = iq.tuple_windows().map(|(i, q)| {
-            let c = i * q.conj();
-            let angle = f32::atan2(c.im as f32, c.re as f32);
-            angle * 0.4
-        });
+        let pcm = iq
+            .low_pass(SAMPLE_RATE, 100_000.0)
+            .tuple_windows()
+            .map(|(i, q)| {
+                let c = i * q.conj();
+                let angle = f32::atan2(c.im as f32, c.re as f32);
+                angle
+            });
 
         for sample in pcm {
             wav.write_sample(sample).unwrap();
         }
     }
+
+    wav.finalize().unwrap();
 }
