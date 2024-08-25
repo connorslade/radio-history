@@ -1,6 +1,11 @@
 use core::f32;
-use std::{fs::File, io::BufWriter, time::Instant};
+use std::{
+    fs::File,
+    io::BufWriter,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
+use chrono::{DateTime, NaiveDateTime};
 use database::Database;
 use hound::{SampleFormat, WavSpec, WavWriter};
 
@@ -15,6 +20,7 @@ mod web;
 use filters::{down_sample::DownSampleExt, low_pass::LowPassExt};
 use transcribe::{Transcriber, TRANSCRIBE_SAMPLE_RATE};
 use uuid::Uuid;
+use web::UiMessage;
 
 const BUFFER_SIZE: usize = 16_384;
 const SAMPLE_RATE: u32 = 250_000;
@@ -44,7 +50,7 @@ fn main() -> Result<()> {
     device.reset_buffer().unwrap();
 
     let database = Database::new()?;
-    web::start(database.clone());
+    let tx = web::start(database.clone());
 
     let mut transcriber = Transcriber::new("tiny_en.bin").unwrap();
     let mut wav: Option<Message> = None;
@@ -58,19 +64,32 @@ fn main() -> Result<()> {
 
         if rms(&iq) < SQUELCH {
             if let Some(Message { uuid, wav, buffer }) = wav.take() {
+                tx.send(UiMessage::Processing)?;
                 wav.finalize().unwrap();
 
                 let start = Instant::now();
                 let text = (!buffer.is_empty()).then(|| transcriber.transcribe(&buffer).unwrap());
-                let text = text.as_deref();
+                let text_ref = text.as_deref();
 
-                println!("{} ({:?})", text.unwrap_or("<No Text>"), start.elapsed());
-                database.lock().insert_message(text, uuid)?;
+                println!(
+                    "{} ({:?})",
+                    text_ref.unwrap_or("<No Text>"),
+                    start.elapsed()
+                );
+                database.lock().insert_message(text_ref, uuid)?;
+
+                tx.send(UiMessage::Complete(database::Message {
+                    date: date_time(),
+                    audio: uuid,
+                    text,
+                }))?;
             }
             continue;
         }
 
         let message = wav.get_or_insert_with(|| {
+            tx.send(UiMessage::Receiving).unwrap();
+
             let uuid = Uuid::new_v4();
             let wav = WavWriter::create(format!("data/audio/{uuid}.wav"), WAVE_SPEC).unwrap();
 
@@ -114,4 +133,16 @@ fn main() -> Result<()> {
 
 fn rms(iq: &[Complex<f32>]) -> f32 {
     (iq.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>() / iq.len() as f32).sqrt()
+}
+
+fn date_time() -> NaiveDateTime {
+    DateTime::from_timestamp(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64,
+        0,
+    )
+    .unwrap()
+    .naive_local()
 }

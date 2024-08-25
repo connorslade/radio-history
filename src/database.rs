@@ -16,11 +16,11 @@ pub struct LockedDatabase<'a> {
     connection: MutexGuard<'a, Connection>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Message {
     pub date: NaiveDateTime,
     pub audio: Uuid,
-    pub text: String,
+    pub text: Option<String>,
 }
 
 impl Database {
