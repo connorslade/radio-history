@@ -1,7 +1,9 @@
 use core::f32;
 use std::{
+    f32::consts::PI,
     fs::File,
-    io::BufWriter,
+    io::{BufWriter, Write},
+    iter,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -18,6 +20,7 @@ mod filters;
 mod transcribe;
 mod web;
 use filters::{down_sample::DownSampleExt, low_pass::LowPassExt};
+use num_traits::Zero;
 use transcribe::{Transcriber, TRANSCRIBE_SAMPLE_RATE};
 use uuid::Uuid;
 use web::UiMessage;
@@ -26,13 +29,13 @@ const BUFFER_SIZE: usize = 16_384;
 const SAMPLE_RATE: u32 = 250_000;
 const AUDIO_CUTOFF_FREQ: f32 = 15_000.0;
 
-const SQUELCH: f32 = 0.7;
+const SQUELCH: f32 = 0.6;
 
 const WAVE_SAMPLE_RATE: u32 = 44_100;
 const WAVE_SPEC: WavSpec = WavSpec {
     channels: 1,
     sample_rate: WAVE_SAMPLE_RATE,
-    bits_per_sample: 32,
+    bits_per_sample: 8,
     sample_format: SampleFormat::Int,
 };
 
@@ -45,7 +48,10 @@ struct Message {
 fn main() -> Result<()> {
     let mut device = rtlsdr::open(0).unwrap();
 
-    device.set_center_freq(156_450_000).unwrap();
+    let offset = 50_000;
+    let offset_angle = -2.0 * PI * offset as f32;
+
+    device.set_center_freq(156_400_000).unwrap();
     device.set_sample_rate(SAMPLE_RATE).unwrap();
     device.reset_buffer().unwrap();
 
@@ -54,13 +60,22 @@ fn main() -> Result<()> {
 
     let mut transcriber = Transcriber::new("tiny_en.bin").unwrap();
     let mut wav: Option<Message> = None;
+    let mut last_sample = Complex::zero();
 
+    let mut sample = 0;
     loop {
         let data = device.read_sync(BUFFER_SIZE).unwrap();
         let iq = data
             .chunks_exact(2)
             .map(|chunk| Complex::new(chunk[0] as f32 / 127.5 - 1.0, chunk[1] as f32 / 127.5 - 1.0))
+            .enumerate()
+            .map(|(i, iq)| {
+                let t = (sample + i) as f32 / SAMPLE_RATE as f32;
+                let angle = offset_angle * t;
+                iq * Complex::new(angle.cos(), angle.sin())
+            })
             .collect::<Vec<_>>();
+        sample += BUFFER_SIZE / 2;
 
         if rms(&iq) < SQUELCH {
             if let Some(Message { uuid, wav, buffer }) = wav.take() {
@@ -100,26 +115,28 @@ fn main() -> Result<()> {
             }
         });
 
-        let pcm = iq
-            .into_iter()
+        let pcm = iter::once(last_sample)
+            .chain(iq.into_iter())
             .low_pass(SAMPLE_RATE, 20_000.0)
             .tuple_windows()
-            .map(|(i, q)| {
-                let c = i * q.conj();
-                let angle = f32::atan2(c.im as f32, c.re as f32);
-                angle
+            .map(|(a, b)| {
+                last_sample = b;
+
+                let c = a.conj() * b;
+                let angle = f32::atan2(c.re as f32, c.im as f32);
+                angle * 8.0
             });
 
         let audio = pcm
             .low_pass(SAMPLE_RATE, AUDIO_CUTOFF_FREQ)
-            .filter(|x| x.abs() < 1.0)
             .down_sample(SAMPLE_RATE, WAVE_SAMPLE_RATE)
             .collect::<Vec<_>>();
 
+        let mean = audio.iter().sum::<f32>() / audio.len() as f32;
         audio.iter().for_each(|x| {
             message
                 .wav
-                .write_sample((x * i32::MAX as f32) as i32)
+                .write_sample(((x - mean) * i8::MAX as f32) as i8)
                 .unwrap()
         });
 
