@@ -10,7 +10,8 @@ pub struct Transcriber {
 impl Transcriber {
     pub fn new(model: &str) -> Result<Transcriber> {
         let model =
-            WhisperContext::new_with_params(model, WhisperContextParameters::default()).unwrap();
+            WhisperContext::new_with_params(model, WhisperContextParameters { use_gpu: true })
+                .unwrap();
         Ok(Self { model })
     }
 

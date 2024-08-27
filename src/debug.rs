@@ -3,7 +3,6 @@ use std::{num::NonZeroU32, rc::Rc};
 use anyhow::Result;
 use flume::Receiver;
 use num_complex::{Complex, ComplexFloat};
-use num_traits::Zero;
 use softbuffer::{Buffer, Context, Surface};
 use winit::{
     application::ApplicationHandler,
