@@ -16,12 +16,14 @@ use itertools::Itertools;
 use num_complex::Complex;
 
 mod database;
+#[cfg(feature = "debug")]
 mod debug;
 mod filters;
 mod transcribe;
 mod web;
 use filters::{down_sample::DownSampleExt, low_pass::LowPassExt};
 use num_traits::Zero;
+#[cfg(feature = "debug")]
 use rustfft::FftPlanner;
 use transcribe::{Transcriber, TRANSCRIBE_SAMPLE_RATE};
 use uuid::Uuid;
@@ -51,10 +53,10 @@ fn main() -> Result<()> {
     let mut device = rtlsdr::open(0).unwrap();
     println!("{:?}", device.get_tuner_gains().unwrap());
 
+    #[cfg(feature = "debug")]
     let (fft_tx, fft_rx) = flume::unbounded();
-    thread::spawn(|| {
-        debug::start(fft_rx).unwrap();
-    });
+    #[cfg(feature = "debug")]
+    thread::spawn(|| debug::start(fft_rx).unwrap());
 
     device.set_center_freq(156_450_000).unwrap();
     device.set_sample_rate(SAMPLE_RATE).unwrap();
@@ -69,6 +71,7 @@ fn main() -> Result<()> {
     let mut transcriber = Transcriber::new("tiny_en.bin").unwrap();
     let mut wav: Option<Message> = None;
     let mut last_sample = Complex::zero();
+    #[cfg(feature = "debug")]
     let mut fft_planner = FftPlanner::new();
 
     loop {
@@ -79,11 +82,14 @@ fn main() -> Result<()> {
             .map(|chunk| Complex::new(chunk[0] as f32 / 127.5 - 1.0, chunk[1] as f32 / 127.5 - 1.0))
             .collect::<Vec<_>>();
 
-        let mut fft = iq.clone();
-        fft_planner
-            .plan_fft_forward(BUFFER_SIZE as usize / 2)
-            .process(&mut fft);
-        fft_tx.send(fft).unwrap();
+        #[cfg(feature = "debug")]
+        {
+            let mut fft = iq.clone();
+            fft_planner
+                .plan_fft_forward(BUFFER_SIZE as usize / 2)
+                .process(&mut fft);
+            fft_tx.send(fft).unwrap();
+        }
 
         if rms(&iq) < SQUELCH {
             if let Some(Message { uuid, wav, buffer }) = wav.take() {
