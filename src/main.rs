@@ -2,8 +2,8 @@ use core::f32;
 use std::{
     f32::consts::PI,
     fs::File,
-    io::{BufWriter, Write},
-    iter,
+    io::BufWriter,
+    iter, thread,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -13,14 +13,16 @@ use hound::{SampleFormat, WavSpec, WavWriter};
 
 use anyhow::Result;
 use itertools::Itertools;
-use num_complex::{Complex, ComplexFloat};
+use num_complex::Complex;
 
 mod database;
+mod debug;
 mod filters;
 mod transcribe;
 mod web;
 use filters::{down_sample::DownSampleExt, low_pass::LowPassExt};
 use num_traits::Zero;
+use rustfft::FftPlanner;
 use transcribe::{Transcriber, TRANSCRIBE_SAMPLE_RATE};
 use uuid::Uuid;
 use web::UiMessage;
@@ -48,6 +50,11 @@ struct Message {
 fn main() -> Result<()> {
     let mut device = rtlsdr::open(0).unwrap();
 
+    let (fft_tx, fft_rx) = flume::unbounded();
+    thread::spawn(|| {
+        debug::start(fft_rx).unwrap();
+    });
+
     let offset = 50_000;
     let offset_angle = -2.0 * PI * offset as f32;
 
@@ -61,10 +68,12 @@ fn main() -> Result<()> {
     let mut transcriber = Transcriber::new("tiny_en.bin").unwrap();
     let mut wav: Option<Message> = None;
     let mut last_sample = Complex::zero();
+    let mut fft_planner = FftPlanner::new();
 
     let mut sample = 0;
     loop {
         let data = device.read_sync(BUFFER_SIZE).unwrap();
+
         let iq = data
             .chunks_exact(2)
             .map(|chunk| Complex::new(chunk[0] as f32 / 127.5 - 1.0, chunk[1] as f32 / 127.5 - 1.0))
@@ -122,15 +131,28 @@ fn main() -> Result<()> {
             .map(|(a, b)| {
                 last_sample = b;
 
-                let c = a.conj() * b;
-                let angle = f32::atan2(c.re as f32, c.im as f32);
-                angle * 8.0
+                let mut angle = b.arg() - a.arg();
+                if angle > PI {
+                    angle -= 2.0 * PI;
+                } else if angle < -PI {
+                    angle += 2.0 * PI;
+                }
+
+                angle * 10.0
             });
 
         let audio = pcm
             .low_pass(SAMPLE_RATE, AUDIO_CUTOFF_FREQ)
             .down_sample(SAMPLE_RATE, WAVE_SAMPLE_RATE)
             .collect::<Vec<_>>();
+
+        let mut fft = audio
+            .clone()
+            .into_iter()
+            .map(|x| Complex::new(x, 0.0))
+            .collect_vec();
+        fft_planner.plan_fft_forward(1444).process(&mut fft);
+        fft_tx.send(fft).unwrap();
 
         let mean = audio.iter().sum::<f32>() / audio.len() as f32;
         audio.iter().for_each(|x| {
