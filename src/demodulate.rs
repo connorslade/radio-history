@@ -39,6 +39,7 @@ impl Demodulator {
             .sqrt()
     }
 
+    #[cfg(feature = "debug")]
     pub fn iq(&self) -> &[Complex<f32>] {
         &self.iq
     }
