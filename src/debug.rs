@@ -92,6 +92,8 @@ impl ApplicationHandler for Debug {
 
 fn draw(buffer: &mut Buffer<Window, Window>, size: (u32, u32), rx: &Receiver<Vec<Complex<f32>>>) {
     while let Ok(row) = rx.try_recv() {
+        let row = &row[0..row.len() / 2];
+
         let last_row = (&buffer[size.0 as usize..(size.0 * size.1) as usize]).to_owned();
         buffer[0..(size.0 * (size.1 - 1)) as usize].copy_from_slice(&last_row);
 
