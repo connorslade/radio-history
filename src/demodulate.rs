@@ -5,7 +5,7 @@ use num_complex::Complex;
 use num_traits::Zero;
 
 use crate::{
-    consts::{AUDIO_CUTOFF_FREQ, SAMPLE_RATE, WAVE_SAMPLE_RATE},
+    consts::{AUDIO_CUTOFF_FREQ, IQ_CUTOFF_FREQ, SAMPLE_RATE, WAVE_SAMPLE_RATE},
     filters::{down_sample::DownSampleExt, low_pass::LowPassExt},
 };
 
@@ -47,7 +47,7 @@ impl Demodulator {
     pub fn to_audio(&mut self, gain: f32) -> Vec<f32> {
         let mut audio = iter::once(self.last_sample)
             .chain(self.iq.iter().copied())
-            .low_pass(SAMPLE_RATE, 20_000.0)
+            .low_pass(SAMPLE_RATE, IQ_CUTOFF_FREQ)
             .tuple_windows()
             .map(|(a, b)| {
                 self.last_sample = b;

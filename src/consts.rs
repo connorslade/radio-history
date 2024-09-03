@@ -2,6 +2,8 @@ use hound::{SampleFormat, WavSpec};
 
 pub const BUFFER_SIZE: usize = 16_384;
 pub const SAMPLE_RATE: u32 = 250_000;
+
+pub const IQ_CUTOFF_FREQ: f32 = 20_000.0;
 pub const AUDIO_CUTOFF_FREQ: f32 = 15_000.0;
 
 pub const SQUELCH: f32 = 0.05;

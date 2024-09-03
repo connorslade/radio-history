@@ -10,8 +10,6 @@ use core::f32;
 use database::Database;
 use demodulate::Demodulator;
 use hound::WavWriter;
-#[cfg(feature = "debug")]
-use rustfft::FftPlanner;
 use uuid::Uuid;
 
 mod database;
@@ -55,7 +53,7 @@ fn main() -> Result<()> {
     let mut transcriber = Transcriber::new("tiny_en.bin").unwrap();
     let mut wav: Option<Message> = None;
     #[cfg(feature = "debug")]
-    let mut fft_planner = FftPlanner::new();
+    let mut fft_planner = rustfft::FftPlanner::new();
 
     let mut demod = Demodulator::empty();
     loop {
