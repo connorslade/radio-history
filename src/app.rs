@@ -27,6 +27,8 @@ pub struct App {
     device: RTLSDRDevice,
     demodulator: Demodulator,
     recordings: Vec<Option<Message>>,
+    #[cfg(feature = "debug")]
+    debug: flume::Sender<Vec<num_complex::Complex<f32>>>,
 
     database: Database,
     transcriber: Transcriber,
@@ -49,11 +51,20 @@ impl App {
         let transcriber = Transcriber::new(&config.misc.transcribe_model)?;
         let web_tx = web::start(&config.server, database.clone());
 
+        #[cfg(feature = "debug")]
+        let debug_tx = {
+            let (tx, rx) = flume::unbounded();
+            std::thread::spawn(move || crate::signal::debug::start(rx).unwrap());
+            tx
+        };
+
         Ok(Self {
             config,
             device,
             demodulator,
             recordings,
+            #[cfg(feature = "debug")]
+            debug: debug_tx,
             database,
             transcriber,
             web_tx,
@@ -74,6 +85,8 @@ impl App {
     pub fn process_samples(&mut self) {
         let data = self.device.read_sync(BUFFER_SIZE).unwrap();
         self.demodulator.replace(&data);
+        #[cfg(feature = "debug")]
+        self.debug.send(self.demodulator.iq().to_owned()).unwrap();
 
         let mut finalize = Vec::new();
         for (idx, channel) in self.config.channels.iter().enumerate() {
@@ -86,7 +99,12 @@ impl App {
             }
 
             let message = self.recordings[idx].get_or_insert_with(|| {
-                self.web_tx.send(UiMessage::Receiving).unwrap();
+                self.web_tx
+                    .send(UiMessage::Receiving {
+                        idx: idx as u32,
+                        name: channel.name.to_owned(),
+                    })
+                    .unwrap();
                 Message::new(&self.config.misc.data_dir)
             });
 
@@ -101,7 +119,8 @@ impl App {
 
     fn finalize_recording(&mut self, index: usize) -> Result<()> {
         if let Some(Message { uuid, wav, buffer }) = self.recordings[index].take() {
-            self.web_tx.send(UiMessage::Processing)?;
+            self.web_tx
+                .send(UiMessage::Processing { idx: index as u32 })?;
             wav.finalize().unwrap();
 
             let start = Instant::now();

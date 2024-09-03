@@ -3,6 +3,7 @@ use std::{num::NonZeroU32, rc::Rc};
 use anyhow::Result;
 use flume::Receiver;
 use num_complex::{Complex, ComplexFloat};
+use rustfft::FftPlanner;
 use softbuffer::{Buffer, Context, Surface};
 use winit::{
     application::ApplicationHandler,
@@ -90,7 +91,10 @@ impl ApplicationHandler for Debug {
 }
 
 fn draw(buffer: &mut Buffer<Window, Window>, size: (u32, u32), rx: &Receiver<Vec<Complex<f32>>>) {
-    while let Ok(row) = rx.try_recv() {
+    while let Ok(mut row) = rx.try_recv() {
+        FftPlanner::new()
+            .plan_fft_forward(row.len())
+            .process(&mut row);
         let row = &row[0..row.len() / 2];
 
         let last_row = (&buffer[size.0 as usize..(size.0 * size.1) as usize]).to_owned();

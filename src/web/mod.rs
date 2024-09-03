@@ -27,8 +27,8 @@ pub struct App {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type")]
 pub enum UiMessage {
-    Receiving,
-    Processing,
+    Receiving { idx: u32, name: String },
+    Processing { idx: u32 },
     Complete(Message),
 }
 

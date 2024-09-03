@@ -16,5 +16,5 @@ data_dir = "data"
 [[channels]]
 name = "Marine 9"
 freq = 156_450_000
-squelch = 0.05
+squelch = 0.01
 gain = 10.0
