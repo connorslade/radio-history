@@ -12,6 +12,7 @@ use demodulate::Demodulator;
 use hound::WavWriter;
 use uuid::Uuid;
 
+mod config;
 mod database;
 #[cfg(feature = "debug")]
 mod debug;
@@ -23,7 +24,8 @@ use transcribe::{Transcriber, TRANSCRIBE_SAMPLE_RATE};
 use web::UiMessage;
 mod consts;
 mod demodulate;
-use consts::{BUFFER_SIZE, SAMPLE_RATE, SQUELCH, WAVE_SAMPLE_RATE, WAVE_SPEC};
+use config::Config;
+use consts::{BUFFER_SIZE, SQUELCH, WAVE_SAMPLE_RATE, WAVE_SPEC};
 
 struct Message {
     uuid: Uuid,
@@ -32,25 +34,26 @@ struct Message {
 }
 
 fn main() -> Result<()> {
-    let mut device = rtlsdr::open(0).unwrap();
-    println!("{:?}", device.get_tuner_gains().unwrap());
+    let config = Config::load("config.toml")?;
+
+    let mut device = rtlsdr::open(config.radio.device_index).unwrap();
 
     #[cfg(feature = "debug")]
     let (fft_tx, fft_rx) = flume::unbounded();
     #[cfg(feature = "debug")]
     std::thread::spawn(|| debug::start(fft_rx).unwrap());
 
-    device.set_center_freq(156_450_000).unwrap();
-    device.set_sample_rate(SAMPLE_RATE).unwrap();
+    device.set_center_freq(config.radio.center_freq).unwrap();
+    device.set_sample_rate(config.radio.sample_rate).unwrap();
     device.set_tuner_gain_mode(true).unwrap();
     device.set_agc_mode(false).unwrap();
-    device.set_tuner_gain(10).unwrap();
+    device.set_tuner_gain(config.radio.tuner_gain).unwrap();
     device.reset_buffer().unwrap();
 
-    let database = Database::new()?;
-    let tx = web::start(database.clone());
+    let database = Database::new(&config.misc.data_dir)?;
+    let tx = web::start(&config.server, database.clone());
 
-    let mut transcriber = Transcriber::new("tiny_en.bin").unwrap();
+    let mut transcriber = Transcriber::new(&config.misc.transcribe_model).unwrap();
     let mut wav: Option<Message> = None;
     #[cfg(feature = "debug")]
     let mut fft_planner = rustfft::FftPlanner::new();
@@ -98,7 +101,12 @@ fn main() -> Result<()> {
             tx.send(UiMessage::Receiving).unwrap();
 
             let uuid = Uuid::new_v4();
-            let wav = WavWriter::create(format!("data/audio/{uuid}.wav"), WAVE_SPEC).unwrap();
+            let path = config
+                .misc
+                .data_dir
+                .join("audio")
+                .join(format!("{}.wav", uuid));
+            let wav = WavWriter::create(path, WAVE_SPEC).unwrap();
 
             Message {
                 uuid,

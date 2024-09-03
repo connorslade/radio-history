@@ -14,7 +14,10 @@ use serde::Serialize;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::database::{Database, Message};
+use crate::{
+    config::ServerConfig,
+    database::{Database, Message},
+};
 
 pub struct App {
     database: Database,
@@ -29,7 +32,7 @@ pub enum UiMessage {
     Complete(Message),
 }
 
-pub fn start(database: Database) -> Sender<UiMessage> {
+pub fn start(server_config: &ServerConfig, database: Database) -> Sender<UiMessage> {
     trace::set_log_level(Level::Trace);
 
     let (tx, rx) = flume::unbounded::<UiMessage>();
@@ -43,8 +46,8 @@ pub fn start(database: Database) -> Sender<UiMessage> {
         }
     }));
 
-    let mut server = Server::<App>::new("0.0.0.0", 8081)
-        .workers(16)
+    let mut server = Server::<App>::new(&server_config.host, server_config.port)
+        .workers(server_config.workers)
         .state(App { database, clients });
 
     ServeStatic::new("web").attach(&mut server);

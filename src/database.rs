@@ -1,4 +1,4 @@
-use std::{fs, sync::Arc};
+use std::{fs, path::Path, sync::Arc};
 
 use anyhow::Result;
 use chrono::NaiveDateTime;
@@ -24,10 +24,10 @@ pub struct Message {
 }
 
 impl Database {
-    pub fn new() -> Result<Self> {
-        let _ = fs::create_dir_all("data/audio");
+    pub fn new(data_dir: &Path) -> Result<Self> {
+        let _ = fs::create_dir_all(data_dir.join("audio"));
 
-        let connection = Connection::open("data/data.db")?;
+        let connection = Connection::open(data_dir.join("data.db"))?;
         connection.execute(include_str!("sql/init_messages.sql"), params![])?;
 
         Ok(Self {
