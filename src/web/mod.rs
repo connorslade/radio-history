@@ -14,10 +14,10 @@ use serde::Serialize;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::{
-    config::ServerConfig,
-    database::{Database, Message},
-};
+use crate::config::ServerConfig;
+
+pub mod database;
+use database::{Database, Message};
 
 pub struct App {
     database: Database,

@@ -19,7 +19,7 @@ impl<Iter: Iterator> Iterator for DownSample<Iter> {
     type Item = Iter::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(next) = self.inner.next() {
+        for next in &mut self.inner {
             self.error += 1.0;
             if self.error >= self.step_by {
                 self.error -= self.step_by;

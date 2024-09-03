@@ -6,7 +6,7 @@ use num_traits::Zero;
 
 use crate::{
     consts::{AUDIO_CUTOFF_FREQ, IQ_CUTOFF_FREQ, SAMPLE_RATE, WAVE_SAMPLE_RATE},
-    filters::{down_sample::DownSampleExt, low_pass::LowPassExt},
+    filters::{down_sample::DownSampleExt, low_pass::LowPassExt, offset::OffsetExt},
 };
 
 pub struct Demodulator {
@@ -29,10 +29,12 @@ impl Demodulator {
             .collect::<Vec<_>>();
     }
 
-    pub fn rms(&self) -> f32 {
+    pub fn rms(&self, offset: u32) -> f32 {
         (self
             .iq
             .iter()
+            .copied()
+            .offset(offset as f32, SAMPLE_RATE)
             .map(|c| c.re * c.re + c.im * c.im)
             .sum::<f32>()
             / self.iq.len() as f32)
@@ -44,9 +46,10 @@ impl Demodulator {
         &self.iq
     }
 
-    pub fn to_audio(&mut self, gain: f32) -> Vec<f32> {
+    pub fn audio(&mut self, offset: u32, gain: f32) -> Vec<f32> {
         let mut audio = iter::once(self.last_sample)
             .chain(self.iq.iter().copied())
+            .offset(offset as f32, SAMPLE_RATE)
             .low_pass(SAMPLE_RATE, IQ_CUTOFF_FREQ)
             .tuple_windows()
             .map(|(a, b)| {

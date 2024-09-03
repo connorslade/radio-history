@@ -37,6 +37,7 @@ pub struct ChannelConfig {
     pub name: String,
     pub freq: u32,
     pub squelch: f32,
+    pub gain: f32,
 }
 
 impl Config {
